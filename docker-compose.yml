@@ -1,0 +1,64 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB:       appdb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U postgres"]
+      interval: 5s
+      retries: 5
+
+  orders-api:
+    build:
+      context: ./OrdersService
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5001:80"                   
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: "http://+:80"  
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=ordersdb;Username=postgres;Password=postgres;"
+
+  payments-api:
+    build:
+      context: ./PaymentsService
+      dockerfile: Dockerfile         
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5002:80"                        
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: "http://+:80"
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=paymentsdb;Username=postgres;Password=postgres;"
+
+  api-gateway:
+    build:
+      context: ./APIGateway
+      dockerfile: Dockerfile
+    depends_on:
+      - orders-api
+      - payments-api
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:
